@@ -150,7 +150,7 @@
       });
       root.appendChild(list);
     }
-    setFab('農場を追加', openFarmForm);
+    setFab('農場を追加', () => openFarmForm());
   }
 
   /* ============ 画面: 農場詳細（牛一覧） ============ */
