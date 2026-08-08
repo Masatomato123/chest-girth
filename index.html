@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#17211c">
+  <meta name="description" content="牛の胸囲充足率（測定胸囲÷日齢標準胸囲）を現場のスマホで記録・グラフ化するアプリ">
+  <title>胸囲充足率レコーダー</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="appbar">
+    <button id="backBtn" class="appbar__back" aria-label="戻る">‹</button>
+    <h1 class="appbar__title" id="barTitle">
+      胸囲充足率レコーダー
+      <span class="appbar__sub" id="barSub">農場を選んでください</span>
+    </h1>
+    <button id="dataBtn" class="appbar__back show" aria-label="データ管理" title="データ管理・バックアップ">⚙</button>
+  </header>
+
+  <main class="wrap">
+    <!-- 農場一覧 -->
+    <section id="view-farms" class="view active" aria-label="農場一覧"></section>
+    <!-- 農場詳細（牛一覧） -->
+    <section id="view-farm" class="view" aria-label="農場の牛一覧"></section>
+    <!-- 牛詳細（充足率・グラフ・記録） -->
+    <section id="view-cattle" class="view" aria-label="牛の記録"></section>
+    <!-- データ管理 -->
+    <section id="view-data" class="view" aria-label="データ管理"></section>
+  </main>
+
+  <!-- FAB（画面ごとに内容差し替え） -->
+  <button id="fab" class="fab" style="display:none">
+    <span class="fab__plus">＋</span><span id="fabLabel">追加</span>
+  </button>
+
+  <!-- モーダルとトーストのマウント先 -->
+  <div id="modalRoot"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <!-- 非表示のファイル入力（CSV / JSON 取り込み用） -->
+  <input type="file" id="fileInput" accept=".csv,text/csv" style="display:none">
+  <input type="file" id="jsonInput" accept=".json,application/json" style="display:none">
+
+  <script src="lib/chart.umd.min.js"></script>
+  <script src="js/standards.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    // Service Worker（オフライン対応）。GitHub Pages のサブパスにも対応する相対登録。
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function (e) {
+          console.log('SW 登録スキップ:', e && e.message);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
