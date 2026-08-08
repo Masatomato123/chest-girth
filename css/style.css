@@ -223,6 +223,10 @@ body {
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
 .btn-row .btn { flex: 1 1 auto; }
 
+.csv-grid { display: grid; gap: 6px; }
+.csv-grid__k { font-size: .76rem; font-weight: 700; color: var(--muted); letter-spacing: .04em; margin-top: 6px; }
+.csv-grid__k:first-child { margin-top: 0; }
+
 /* Floating action button */
 .fab {
   position: fixed;

@@ -239,6 +239,66 @@
     return `${y}-${mo}-${d}`;
   }
 
+  // 測定記録 CSV の取り込み（農場単位）。
+  // 対象の牛は「個体識別番号」で、無ければ「名号」で農場内から照合する。
+  // 想定列: 個体識別番号, 名号, 測定日, 測定胸囲(cm), メモ
+  //（記録書き出しCSVをExcelで編集して戻すことも可能。日齢/標準/充足率などの列は無視して再計算する）
+  function importMeasurementCSV(farmId, text) {
+    const rows = parseCSV(text);
+    const result = { added: 0, errors: [] };
+    if (!rows.length) { result.errors.push({ line: 0, reason: 'データがありません' }); return result; }
+
+    let start = 0;
+    let idx = { tag: 0, name: 1, date: 2, chest: 3, memo: 4 };
+    const header = rows[0].map(s => s.trim());
+    const looksHeader = header.some(h => /個体|識別|名号|測定|日付|胸囲|memo|メモ|date|chest/i.test(h));
+    if (looksHeader) { start = 1; idx = mapMeasureHeader(header); }
+
+    const farmCattle = db.cattle.filter(c => c.farmId === farmId);
+
+    for (let r = start; r < rows.length; r++) {
+      const cells = rows[r];
+      const line = r + 1;
+      const rawTag = get(cells, idx.tag);
+      const rawName = get(cells, idx.name);
+      const rawDate = get(cells, idx.date);
+      const rawChest = get(cells, idx.chest);
+      const memo = get(cells, idx.memo);
+
+      // 照合: 個体識別番号 → 名号
+      let cow = null;
+      if (rawTag) cow = farmCattle.find(c => c.tag && c.tag === rawTag);
+      if (!cow && rawName) cow = farmCattle.find(c => c.name && c.name === rawName);
+      if (!cow) {
+        result.errors.push({ line, reason: `該当する牛が見つかりません（個体識別番号: "${rawTag}" 名号: "${rawName}"）。先に牛を登録してください` });
+        continue;
+      }
+
+      const date = normalizeDate(rawDate);
+      const chest = parseFloat(String(rawChest).replace(/[^\d.]/g, ''));
+      if (!date) { result.errors.push({ line, reason: `測定日が不正です: "${rawDate}"（例 2024-08-01）` }); continue; }
+      if (!isFinite(chest) || chest <= 0) { result.errors.push({ line, reason: `測定胸囲が不正です: "${rawChest}"` }); continue; }
+
+      addMeasurement(cow.id, date, chest, memo);
+      result.added++;
+    }
+    return result;
+  }
+
+  function mapMeasureHeader(header) {
+    const find = (re, def) => {
+      const i = header.findIndex(h => re.test(h));
+      return i >= 0 ? i : def;
+    };
+    return {
+      tag: find(/個体|識別|tag|number/i, 0),
+      name: find(/名号|名前|name/i, 1),
+      date: find(/測定日|日付|date/i, 2),
+      chest: find(/胸囲|chest/i, 3),
+      memo: find(/メモ|memo|備考/i, 4),
+    };
+  }
+
   /* ---------- バックアップ（全データ JSON） ---------- */
   function exportJSON() { return JSON.stringify(db, null, 2); }
   function importJSON(text, mode) {
@@ -266,7 +326,7 @@
     listFarms, getFarm, addFarm, updateFarm, deleteFarm,
     listCattle, getCattle, addCattle, updateCattle, deleteCattle,
     listMeasurements, addMeasurement, updateMeasurement, deleteMeasurement,
-    parseCSV, toCSV, importCattleCSV,
+    parseCSV, toCSV, importCattleCSV, importMeasurementCSV,
     exportJSON, importJSON, clearAll,
     _raw: () => db,
   };

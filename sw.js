@@ -1,5 +1,6 @@
-/* Service Worker — アプリ本体をキャッシュしてオフラインでも起動できるようにする */
-const CACHE = 'chest-app-v1';
+/* Service Worker — ネットワーク優先。オンライン時は常に最新を配信し、
+   オフライン時のみキャッシュから起動する。更新配布時は CACHE 名を上げること。 */
+const CACHE = 'chest-app-v2';
 
 // 相対パス（GitHub Pages のサブディレクトリ配信に対応）
 const ASSETS = [
@@ -24,30 +25,30 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
-  // キャッシュ優先。無ければネットワーク、取得できたら追加キャッシュ。
+  let url;
+  try { url = new URL(req.url); } catch (_) { return; }
+  if (url.origin !== self.location.origin) return; // 外部リソースは素通し
+
+  // ネットワーク優先: 取得できたら最新を返しつつキャッシュを更新。
+  // オフライン等で失敗したらキャッシュ、無ければ index.html を返す。
   e.respondWith(
-    caches.match(req).then((hit) => {
-      if (hit) return hit;
-      return fetch(req).then((res) => {
-        // 同一オリジンのみキャッシュ
-        try {
-          const url = new URL(req.url);
-          if (url.origin === self.location.origin && res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
-          }
-        } catch (_) {}
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy));
+        }
         return res;
-      }).catch(() => caches.match('./index.html'));
-    })
+      })
+      .catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
   );
 });

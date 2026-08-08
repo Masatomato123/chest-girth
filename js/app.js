@@ -160,19 +160,35 @@
     const cattle = DB.listCattle(f.id);
     root.innerHTML = '';
 
-    // ツールバー
-    const tools = el(`
-      <div class="btn-row" style="margin-bottom:14px">
-        <button class="btn btn--ghost btn--sm" id="btnCsvIn">CSVで一括登録</button>
-        <button class="btn btn--ghost btn--sm" id="btnCsvTpl">テンプレート</button>
-        <button class="btn btn--ghost btn--sm" id="btnCsvOut">名簿を書き出す</button>
-        <button class="btn btn--ghost btn--sm" id="btnEditFarm">農場名を編集</button>
-      </div>`);
     root.appendChild(el(`<p class="eyebrow">${esc(f.name)} の牛</p>`));
+
+    // CSV（Excel）で入出力するパネル
+    const tools = el(`
+      <div class="card card--pad" style="margin-bottom:14px">
+        <p class="eyebrow" style="margin:0 0 8px">CSV（Excel）で入出力</p>
+        <div class="csv-grid">
+          <span class="csv-grid__k">牛個体</span>
+          <div class="btn-row">
+            <button class="btn btn--ghost btn--sm" id="btnCowIn">一括登録（取込）</button>
+            <button class="btn btn--ghost btn--sm" id="btnCowOut">名簿を書き出す</button>
+            <button class="btn btn--ghost btn--sm" id="btnCowTpl">テンプレート</button>
+          </div>
+          <span class="csv-grid__k">測定記録</span>
+          <div class="btn-row">
+            <button class="btn btn--ghost btn--sm" id="btnMesIn">一括取込</button>
+            <button class="btn btn--ghost btn--sm" id="btnMesOut">記録を書き出す</button>
+            <button class="btn btn--ghost btn--sm" id="btnMesTpl">テンプレート</button>
+          </div>
+        </div>
+        <button class="btn btn--ghost btn--sm btn--block" id="btnEditFarm" style="margin-top:10px">農場名を編集</button>
+      </div>`);
     root.appendChild(tools);
-    $('#btnCsvIn', root).onclick = () => importCattleFlow(f.id);
-    $('#btnCsvTpl', root).onclick = downloadTemplate;
-    $('#btnCsvOut', root).onclick = () => exportCattleCSV(f);
+    $('#btnCowIn', root).onclick = () => importCattleFlow(f.id);
+    $('#btnCowOut', root).onclick = () => exportCattleCSV(f);
+    $('#btnCowTpl', root).onclick = downloadTemplate;
+    $('#btnMesIn', root).onclick = () => importMeasureFlow(f.id);
+    $('#btnMesOut', root).onclick = () => exportFarmMeasurementsCSV(f);
+    $('#btnMesTpl', root).onclick = downloadMeasureTemplate;
     $('#btnEditFarm', root).onclick = () => openFarmForm(f);
 
     root.appendChild(el(`<h2 class="section-title">個体一覧 <span class="count">${cattle.length} 頭</span></h2>`));
@@ -594,7 +610,7 @@
       const reader = new FileReader();
       reader.onload = () => {
         const res = DB.importCattleCSV(farmId, String(reader.result));
-        showImportResult(res);
+        showImportResult(res, '牛個体');
         renderFarm();
       };
       reader.readAsText(file, 'UTF-8');
@@ -602,9 +618,62 @@
     input.click();
   }
 
-  function showImportResult(res) {
+  // 農場内すべての牛の測定記録を1つのCSVに書き出す（1頭ずつの書き出しと同じ列）
+  function exportFarmMeasurementsCSV(f) {
+    const cattle = DB.listCattle(f.id);
+    const rows = [['個体識別番号', '名号', '品種', '性別', '生年月日', '測定日', '日齢', '測定胸囲(cm)', '日齢標準胸囲(cm)', '胸囲充足率(%)', 'メモ']];
+    let n = 0;
+    cattle.forEach(c => {
+      DB.listMeasurements(c.id).forEach(m => {
+        const ev = S.evaluate(c, m.date, m.chest);
+        rows.push([
+          c.tag, c.name, S.breedLabel(c.breed), S.sexLabel(c.sex), c.birthDate,
+          m.date, ev.days, m.chest,
+          ev.standard == null ? '' : ev.standard.toFixed(1),
+          ev.rate == null ? '' : ev.rate.toFixed(1),
+          m.memo || '',
+        ]);
+        n++;
+      });
+    });
+    if (!n) { toast('測定記録がありません'); return; }
+    download(`測定記録_${f.name}_${todayStr()}.csv`, DB.toCSV(rows), 'text/csv');
+    toast('測定記録を書き出しました');
+  }
+
+  function downloadMeasureTemplate() {
+    const rows = [
+      ['個体識別番号', '名号', '測定日', '測定胸囲(cm)', 'メモ'],
+      ['1234567890', 'あかべこ', '2024-08-01', '130.0', ''],
+      ['1234567891', '', '2024/08/01', '128.5', '体況良好'],
+    ];
+    download('測定記録_取込テンプレート.csv', DB.toCSV(rows), 'text/csv');
+    toast('テンプレートを保存しました');
+  }
+
+  // 測定記録CSVの一括取込。牛は農場内から個体識別番号→名号で照合。
+  function importMeasureFlow(farmId) {
+    if (!DB.listCattle(farmId).length) { toast('先に牛を登録してください'); return; }
+    const input = $('#fileInput');
+    input.value = '';
+    input.onchange = () => {
+      const file = input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const res = DB.importMeasurementCSV(farmId, String(reader.result));
+        showImportResult(res, '測定記録');
+        renderFarm();
+      };
+      reader.readAsText(file, 'UTF-8');
+    };
+    input.click();
+  }
+
+  function showImportResult(res, kind) {
+    const unit = kind === '測定記録' ? '件' : '頭';
     const body = el(`<div class="import-summary"></div>`);
-    body.appendChild(el(`<p class="ok">${res.added} 頭を登録しました。</p>`));
+    body.appendChild(el(`<p class="ok">${res.added} ${unit}を取り込みました。</p>`));
     if (res.errors.length) {
       body.appendChild(el(`<p class="muted">取り込めなかった行：</p>`));
       const ul = el(`<ul></ul>`);
@@ -794,9 +863,23 @@
         </div>
       </div>`));
 
+    const csv = el(`
+      <div class="card card--pad stack" style="margin-top:12px">
+        <p class="eyebrow" style="margin:0">CSV（Excel）で入出力</p>
+        <p class="muted" style="margin:0">牛個体・測定記録の取り込み／書き出しは、各<b>農場の画面</b>で行えます。日々の記録はこちらが便利です。下はCSVの雛形です。</p>
+        <div class="btn-row">
+          <button class="btn btn--ghost btn--sm" id="tplCow">牛個体テンプレート</button>
+          <button class="btn btn--ghost btn--sm" id="tplMes">測定記録テンプレート</button>
+        </div>
+      </div>`);
+    root.appendChild(csv);
+    $('#tplCow', csv).onclick = downloadTemplate;
+    $('#tplMes', csv).onclick = downloadMeasureTemplate;
+
     const backup = el(`
       <div class="card card--pad stack" style="margin-top:12px">
-        <p class="eyebrow" style="margin:0">バックアップ</p>
+        <p class="eyebrow" style="margin:0">完全バックアップ（JSON）</p>
+        <p class="muted" style="margin:0">農場・牛・記録を丸ごと1ファイルに保存します。機種変更や端末間の移行はこれが確実です（Excelでは開けません）。</p>
         <button class="btn btn--primary btn--block" id="expJson">全データを保存（JSON）</button>
         <button class="btn btn--ghost btn--block" id="impMerge">バックアップを読み込む（追加）</button>
         <button class="btn btn--ghost btn--block" id="impReplace">バックアップで置き換える</button>
@@ -808,15 +891,6 @@
     };
     $('#impMerge', backup).onclick = () => importJsonFlow('merge');
     $('#impReplace', backup).onclick = () => importJsonFlow('replace');
-
-    const tpl = el(`
-      <div class="card card--pad stack" style="margin-top:12px">
-        <p class="eyebrow" style="margin:0">CSVテンプレート</p>
-        <p class="muted" style="margin:0">牛の一括登録に使うCSVの雛形です。列は「個体識別番号／名号／品種／性別／生年月日」。</p>
-        <button class="btn btn--ghost btn--block" id="tpl2">テンプレートを保存</button>
-      </div>`);
-    root.appendChild(tpl);
-    $('#tpl2', tpl).onclick = downloadTemplate;
 
     const danger = el(`
       <div class="card card--pad" style="margin-top:12px">
